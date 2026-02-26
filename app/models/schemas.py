@@ -25,43 +25,43 @@ class Photo(BaseModel):
 
 class AttractionStatus(str, Enum):
     open = "open"
-    open_soon = "open_soon"           # opening within the hour / queue open, ride not yet running
-    maintenance = "maintenance"       # planned maintenance / refurbishment
-    breakdown = "breakdown"           # unplanned technical interruption (storing)
-    closed = "closed"                 # closed for the day or queue closed
+    open_soon = "open_soon"           # nognietopen — opening later today
+    maintenance = "maintenance"       # inonderhoud — planned refurbishment
+    breakdown = "breakdown"           # storing / tijdelijkbuitenbedrijf
+    closed = "closed"                 # gesloten / buitenbedrijf / wachtrijgesloten
 
 
 class SingleRiderInfo(BaseModel):
     available: bool
-    status: Optional[str] = None        # "open" | "closed"
-    wait_time: Optional[int] = None     # minutes, null if closed or unavailable
+    status: Optional[str] = None      # "open" | "closed"
+    wait_time: Optional[int] = None   # minutes, null if closed
 
 
 class VirtualQueueState(str, Enum):
-    available = "available"               # VQ open, return time slots available
+    available = "available"               # slots available, return_start/end set
     temporarily_full = "temporarily_full" # walkin — no VQ needed right now
-    full = "full"                         # VQ full for the day
+    full = "full"                         # full for the day
     closed = "closed"                     # VQ not active
 
 
 class VirtualQueueInfo(BaseModel):
     available: bool
     state: Optional[VirtualQueueState] = None
-    return_start: Optional[datetime] = None  # start of the return time window
-    return_end: Optional[datetime] = None    # end of return time window (typically +15 min)
+    return_start: Optional[datetime] = None  # start of return window
+    return_end: Optional[datetime] = None    # end of return window (+15 min)
 
 
 class AttractionLive(BaseModel):
     id: str
     name: str
     status: AttractionStatus
-    wait_time: Optional[int] = None     # minutes; null if not operating
+    wait_time: Optional[int] = None
     single_rider: Optional[SingleRiderInfo] = None
     virtual_queue: Optional[VirtualQueueInfo] = None
 
 
 # ──────────────────────────────────────────────
-# Attractions — Static info
+# Attractions — Static (ride-info)
 # ──────────────────────────────────────────────
 
 class AttractionType(str, Enum):
@@ -107,13 +107,13 @@ class AttractionInfo(BaseModel):
 class ShowTime(BaseModel):
     start_date_time: datetime
     end_date_time: datetime
-    edition: Optional[str] = None       # e.g. "Parkshow", "Avondshow"
+    edition: Optional[str] = None
 
 
 class Show(BaseModel):
     id: str
     name: str
-    status: str = "open"               # "open" | "closed"
+    status: str = "open"              # "open" | "closed"
     land: Optional[str] = None
     location: Optional[Location] = None
     photos: List[Photo] = []
@@ -122,7 +122,7 @@ class Show(BaseModel):
 
 
 # ──────────────────────────────────────────────
-# Restaurants
+# Restaurants & Shops
 # ──────────────────────────────────────────────
 
 class VenueStatus(str, Enum):
@@ -141,10 +141,6 @@ class Restaurant(BaseModel):
     closing_time: Optional[datetime] = None
 
 
-# ──────────────────────────────────────────────
-# Shops
-# ──────────────────────────────────────────────
-
 class Shop(BaseModel):
     id: str
     name: str
@@ -161,16 +157,16 @@ class Shop(BaseModel):
 # ──────────────────────────────────────────────
 
 class ParkHours(BaseModel):
-    opening_time: str               # "HH:MM"
-    closing_time: str               # "HH:MM"
-    type: str = "operating"        # "operating" | "informational"
-    description: Optional[str] = None  # e.g. "Evening Hours"
+    opening_time: str                    # "HH:MM"
+    closing_time: str                    # "HH:MM"
+    type: str = "operating"             # "operating" | "informational"
+    description: Optional[str] = None   # e.g. "Evening Hours"
 
 
 class ParkDay(BaseModel):
-    date: str                       # "YYYY-MM-DD"
+    date: str                            # "YYYY-MM-DD"
     is_open: bool
-    hours: List[ParkHours] = []    # multiple entries for e.g. evening hours
+    hours: List[ParkHours] = []
     special_event: Optional[str] = None
 
 
@@ -179,18 +175,3 @@ class ParkCalendar(BaseModel):
     park_name: str
     last_updated: datetime
     days: List[ParkDay] = []
-
-
-# ──────────────────────────────────────────────
-# Full park live response
-# ──────────────────────────────────────────────
-
-class ParkLiveResponse(BaseModel):
-    park_id: str
-    park_name: str
-    last_updated: datetime
-    park_status: str
-    attractions: List[AttractionLive] = []
-    shows: List[Show] = []
-    restaurants: List[Restaurant] = []
-    shops: List[Shop] = []

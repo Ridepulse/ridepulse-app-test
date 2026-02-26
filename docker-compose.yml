@@ -1,7 +1,7 @@
 services:
   api:
     build: .
-    container_name: themepark-api
+    container_name: ridepulse-api
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -9,17 +9,19 @@ services:
       - MONGO_URI=mongodb://mongo:27017
       - MONGO_DB=themepark
       - DATA_DIR=/data
+      - RIDE_INFO_DIR=/ride-info
     volumes:
-      - ./data:/data          # static & cached JSON files
+      - ./data:/data           # auto-generated live.json + calendar.json per park
+      - ./ride-info:/ride-info # static ride info JSON files (edit without rebuild)
     depends_on:
       mongo:
         condition: service_healthy
     networks:
-      - themepark-net
+      - ridepulse-net
 
   mongo:
     image: mongo:7
-    container_name: themepark-mongo
+    container_name: ridepulse-mongo
     restart: unless-stopped
     volumes:
       - mongo-data:/data/db
@@ -29,11 +31,11 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - themepark-net
+      - ridepulse-net
 
 volumes:
   mongo-data:
 
 networks:
-  themepark-net:
+  ridepulse-net:
     driver: bridge

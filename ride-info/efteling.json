@@ -13,11 +13,6 @@
           "url": "https://cdn.degusseme.com/efteling/baron1898/01.jpg",
           "alt": "Baron 1898 lift hill",
           "is_primary": true
-        },
-        {
-          "url": "https://cdn.degusseme.com/efteling/baron1898/02.jpg",
-          "alt": "Baron 1898 drop",
-          "is_primary": false
         }
       ],
       "details": {
@@ -48,46 +43,6 @@
       }
     },
     {
-      "id": "vliegende-hollander",
-      "name": "De Vliegende Hollander",
-      "land": "Ruigrijk",
-      "type": "water_ride",
-      "location": { "lat": 51.6491, "lng": 5.0481 },
-      "photos": [
-        {
-          "url": "https://cdn.degusseme.com/efteling/vliegende-hollander/01.jpg",
-          "alt": "De Vliegende Hollander exterior",
-          "is_primary": true
-        }
-      ],
-      "details": {
-        "height_requirement_cm": 100,
-        "capacity_per_hour": 900,
-        "duration_seconds": 420,
-        "thrill_level": "moderate"
-      }
-    },
-    {
-      "id": "fata-morgana",
-      "name": "Fata Morgana",
-      "land": "Anderrijk",
-      "type": "dark_ride",
-      "location": { "lat": 51.6502, "lng": 5.0459 },
-      "photos": [
-        {
-          "url": "https://cdn.degusseme.com/efteling/fata-morgana/01.jpg",
-          "alt": "Fata Morgana Arabian nights atmosphere",
-          "is_primary": true
-        }
-      ],
-      "details": {
-        "height_requirement_cm": null,
-        "capacity_per_hour": 1600,
-        "duration_seconds": 600,
-        "thrill_level": "family"
-      }
-    },
-    {
       "id": "symbolica",
       "name": "Symbolica",
       "land": "Fantasierijk",
@@ -105,6 +60,46 @@
         "capacity_per_hour": 2400,
         "duration_seconds": 540,
         "thrill_level": "family"
+      }
+    },
+    {
+      "id": "fata-morgana",
+      "name": "Fata Morgana",
+      "land": "Anderrijk",
+      "type": "dark_ride",
+      "location": { "lat": 51.6502, "lng": 5.0459 },
+      "photos": [
+        {
+          "url": "https://cdn.degusseme.com/efteling/fata-morgana/01.jpg",
+          "alt": "Fata Morgana Arabian nights",
+          "is_primary": true
+        }
+      ],
+      "details": {
+        "height_requirement_cm": null,
+        "capacity_per_hour": 1600,
+        "duration_seconds": 600,
+        "thrill_level": "family"
+      }
+    },
+    {
+      "id": "vliegende-hollander",
+      "name": "De Vliegende Hollander",
+      "land": "Ruigrijk",
+      "type": "water_ride",
+      "location": { "lat": 51.6491, "lng": 5.0481 },
+      "photos": [
+        {
+          "url": "https://cdn.degusseme.com/efteling/vliegende-hollander/01.jpg",
+          "alt": "De Vliegende Hollander",
+          "is_primary": true
+        }
+      ],
+      "details": {
+        "height_requirement_cm": 100,
+        "capacity_per_hour": 900,
+        "duration_seconds": 420,
+        "thrill_level": "moderate"
       }
     }
   ]

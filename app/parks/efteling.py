@@ -1,21 +1,22 @@
 """
-Efteling Connector
-==================
-Fetches live data from the official Efteling WIS API.
-API base: https://api.efteling.com/app/wis/
+Efteling Park Connector
+=======================
+Live data source: https://api.efteling.com/app/wis/
+Calendar source:  https://www.efteling.com/service/cached/getpoiinfo/en/{year}/{month}
 
-All field names and status strings are derived from the official Efteling app source.
+All field names and state strings are based on the official Efteling app source.
 
-WIS response structure (AttractionInfo array):
-  entry.Id           — unique ride/show/restaurant ID
-  entry.Name         — display name
-  entry.Type         — "Attraction" | "Attracties" | "Shows en Entertainment" | "Horeca" | "Souvenirwinkel"
-  entry.State        — ride state string (see _map_efteling_state)
-  entry.WaitingTime  — integer minutes (attractions only)
-  entry.ShowTimes    — list of upcoming show times (shows only)
-  entry.PastShowTimes — list of past show times (shows only)
-  entry.OpeningTimes — list of {HourFrom, HourTo} (restaurants/shops)
-  entry.VirtualQueue — object with .State and .WaitingTime (optional, attractions only)
+WIS AttractionInfo entry fields:
+  Id            — unique identifier
+  Name          — display name
+  Type          — "Attraction" | "Attracties" | "Shows en Entertainment"
+                  | "Horeca" | "Souvenirwinkel"
+  State         — ride state string (see _map_state)
+  WaitingTime   — integer minutes (attractions)
+  ShowTimes     — upcoming show times (shows)
+  PastShowTimes — past show times (shows)
+  OpeningTimes  — [{HourFrom, HourTo}] (restaurants, shops)
+  VirtualQueue  — {State, WaitingTime} (attractions, optional)
 """
 
 import httpx
@@ -24,7 +25,7 @@ from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
-from app.connectors.base import BaseParkConnector
+from app.parks.base import BaseParkConnector
 from app.models.schemas import (
     AttractionLive, AttractionStatus,
     SingleRiderInfo, VirtualQueueInfo, VirtualQueueState,
@@ -37,71 +38,66 @@ from app.models.schemas import (
 logger = logging.getLogger(__name__)
 
 PARK_TIMEZONE = ZoneInfo("Europe/Amsterdam")
-VIRTUAL_QUEUE_WINDOW_MINUTES = 15   # Efteling return time window
+VQ_WINDOW_MINUTES = 15  # Efteling return time window duration
 
-WIS_URL = "https://api.efteling.com/app/wis/"
+WIS_URL      = "https://api.efteling.com/app/wis/"
 CALENDAR_URL = "https://www.efteling.com/service/cached/getpoiinfo/en/{year}/{month}"
 
-# Headers matching the official Efteling Android app (from source analysis)
+# Headers matching the official Efteling Android app
 WIS_HEADERS = {
-    "User-Agent": "okhttp/4.12.0",
-    "Accept-Encoding": "gzip",
-    "x-app-version": "5.0.0",       # update to latest app version if requests fail
-    "x-app-name": "Efteling",
-    "x-app-id": "nl.efteling.android",
-    "x-app-platform": "Android",
-    "x-app-language": "en",
-    "x-app-timezone": "Europe/Amsterdam",
+    "User-Agent":       "okhttp/4.12.0",
+    "Accept-Encoding":  "gzip",
+    "x-app-version":    "5.0.0",
+    "x-app-name":       "Efteling",
+    "x-app-id":         "nl.efteling.android",
+    "x-app-platform":   "Android",
+    "x-app-language":   "en",
+    "x-app-timezone":   "Europe/Amsterdam",
 }
 
 CALENDAR_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; ThemeparkAPI/1.0)",
-    "X-Requested-With": "XMLHttpRequest",
-    "Referer": "https://www.efteling.com/en/park/opening-hours?app=true",
-    "Cookie": "website#lang=en",
+    "User-Agent":        "Mozilla/5.0 (compatible; RidePulse/1.0)",
+    "X-Requested-With":  "XMLHttpRequest",
+    "Referer":           "https://www.efteling.com/en/park/opening-hours?app=true",
+    "Cookie":            "website#lang=en",
 }
 
 
 # ──────────────────────────────────────────────
-# State → unified status mapping
+# State mapping
 # ──────────────────────────────────────────────
 
 def _map_state(raw: str) -> AttractionStatus:
     """
-    Map Efteling WIS State strings to unified AttractionStatus.
+    Map Efteling WIS State strings → unified AttractionStatus.
 
-    Known states from source:
-      storing              → breakdown   (unplanned interruption)
-      tijdelijkbuitenbedrijf → breakdown (temporary out of service)
-      buitenbedrijf        → closed      (closed for the day)
-      inonderhoud          → maintenance (planned refurbishment)
-      gesloten             → closed
-      wachtrijgesloten     → closed      (queue closed, ride may reopen)
-      nognietopen          → open_soon   (not yet open, opening later today)
-      open                 → open
-      (empty string)       → closed
+    Known states (from official app source):
+      open                  → open
+      nognietopen           → open_soon    (not yet open, opening later today)
+      storing               → breakdown    (unplanned interruption)
+      tijdelijkbuitenbedrijf → breakdown   (temporary out of service)
+      inonderhoud           → maintenance  (planned refurbishment)
+      buitenbedrijf         → closed       (closed for the day)
+      gesloten              → closed
+      wachtrijgesloten      → closed       (queue closed)
+      ""                    → closed
     """
     state = (raw or "").lower().strip()
     mapping = {
-        "open": AttractionStatus.open,
-        "nognietopen": AttractionStatus.open_soon,
-        "storing": AttractionStatus.breakdown,
-        "tijdelijkbuitenbedrijf": AttractionStatus.breakdown,
-        "inonderhoud": AttractionStatus.maintenance,
-        "buitenbedrijf": AttractionStatus.closed,
-        "gesloten": AttractionStatus.closed,
-        "wachtrijgesloten": AttractionStatus.closed,
-        "": AttractionStatus.closed,
+        "open":                    AttractionStatus.open,
+        "nognietopen":             AttractionStatus.open_soon,
+        "storing":                 AttractionStatus.breakdown,
+        "tijdelijkbuitenbedrijf":  AttractionStatus.breakdown,
+        "inonderhoud":             AttractionStatus.maintenance,
+        "buitenbedrijf":           AttractionStatus.closed,
+        "gesloten":                AttractionStatus.closed,
+        "wachtrijgesloten":        AttractionStatus.closed,
+        "":                        AttractionStatus.closed,
     }
-    status = mapping.get(state)
-    if status is None:
-        logger.warning(f"[Efteling] Unknown State value: '{raw}' — defaulting to closed")
+    if state not in mapping:
+        logger.warning(f"[Efteling] Unknown State: '{raw}' — defaulting to closed")
         return AttractionStatus.closed
-    return status
-
-
-def _map_venue_state(raw: str) -> VenueStatus:
-    return VenueStatus.open if (raw or "").lower() == "open" else VenueStatus.closed
+    return mapping[state]
 
 
 # ──────────────────────────────────────────────
@@ -109,18 +105,19 @@ def _map_venue_state(raw: str) -> VenueStatus:
 # ──────────────────────────────────────────────
 
 class EftelingConnector(BaseParkConnector):
-    park_id = "efteling"
+    park_id   = "efteling"
     park_name = "Efteling"
 
-    _wis_cache: dict = None
-    _wis_cache_time: datetime = None
-    WIS_CACHE_SECONDS = 60  # reuse WIS response within same scheduler run
+    # Internal WIS cache — avoids 4 identical HTTP calls per scheduler tick
+    _wis_cache: Optional[dict] = None
+    _wis_cache_time: Optional[datetime] = None
+    WIS_CACHE_SECONDS = 60
 
     async def _fetch_wis(self) -> dict:
         """
-        Fetch raw WIS response. Shared by attractions, shows, restaurants, shops.
-        Internally cached for WIS_CACHE_SECONDS to avoid 4 identical HTTP calls
-        per scheduler tick (one per fetch_* method).
+        Fetch the raw WIS response. Cached for WIS_CACHE_SECONDS so that
+        fetch_wait_times, fetch_shows, fetch_restaurants and fetch_shops
+        all share the same response within one scheduler run.
         """
         now = datetime.now(timezone.utc)
         if (
@@ -137,31 +134,14 @@ class EftelingConnector(BaseParkConnector):
 
         self._wis_cache = data
         self._wis_cache_time = now
-        logger.info("[Efteling] WIS data fetched and cached.")
+        logger.info("[Efteling] WIS fetched and cached.")
         return data
 
     # ──────────────────────────────────────────
-    # Attractions (wait times)
+    # Attractions
     # ──────────────────────────────────────────
 
     async def fetch_wait_times(self) -> List[AttractionLive]:
-        """
-        Parse attractions and their wait times from the WIS response.
-
-        Single-rider queues appear as separate entries in AttractionInfo with a
-        different Id. The mapping from ride → single-rider-id lives in the POI
-        feed (alternateid field). Since we don't load the POI feed here, we do a
-        reverse lookup: any AttractionInfo entry whose Id is NOT in the POI set
-        but IS referenced by another entry's singleRiderId gets attached to its
-        parent ride.
-
-        Strategy used here (without POI feed):
-          - Build a dict of all entries by Id.
-          - For each entry of Type "Attraction"/"Attracties", look for a partner
-            entry that shares the same name but has "singlerider" in the Id,
-            or has a much lower wait time and a name containing "Single".
-          - This is a best-effort approach; for a perfect mapping load the POI feed.
-        """
         try:
             data = await self._fetch_wis()
         except Exception as e:
@@ -170,54 +150,50 @@ class EftelingConnector(BaseParkConnector):
 
         all_entries = {e["Id"]: e for e in data.get("AttractionInfo", [])}
 
-        # Build a lookup: singleRider entry Id → parent ride Id
-        # Efteling single rider IDs typically end with "sr" or contain "singlerider"
-        single_rider_map: dict[str, str] = {}
-        for entry_id, entry in all_entries.items():
-            lower_id = entry_id.lower()
-            if "singlerider" in lower_id or lower_id.endswith("sr"):
-                # try to find the parent by stripping the suffix
-                parent_id = entry_id.replace("singlerider", "").replace("SR", "").replace("sr", "")
-                if parent_id in all_entries:
-                    single_rider_map[entry_id] = parent_id
+        # Identify single-rider sub-entries by Id suffix
+        # Efteling single-rider Ids typically end with "sr" or contain "singlerider"
+        single_rider_map: dict[str, str] = {}  # sr_id → parent_id
+        for entry_id in all_entries:
+            lower = entry_id.lower()
+            if "singlerider" in lower or lower.endswith("sr"):
+                parent_id = entry_id.lower().replace("singlerider", "").replace("sr", "")
+                # find closest matching parent key
+                match = next((k for k in all_entries if k.lower() == parent_id), None)
+                if match:
+                    single_rider_map[entry_id] = match
 
-        # Also handle droomvlucht standby hack (from source)
-        # droomvluchtstandby → droomvlucht
+        # droomvluchtstandby → droomvlucht (official app hack)
         special_merge = {"droomvluchtstandby": "droomvlucht"}
 
         attractions: List[AttractionLive] = []
-        processed_sr_ids = set(single_rider_map.keys())
+        skip_ids = set(single_rider_map.keys())
 
         for entry_id, entry in all_entries.items():
-            entry_type = entry.get("Type", "")
-            if entry_type not in ("Attraction", "Attracties"):
+            if entry.get("Type") not in ("Attraction", "Attracties"):
                 continue
-            # skip single-rider sub-entries (they'll be attached to their parent)
-            if entry_id in processed_sr_ids:
+            if entry_id in skip_ids:
                 continue
-            # resolve droomvlucht standby → main entry
-            resolved_id = special_merge.get(entry_id, entry_id)
 
+            resolved_id = special_merge.get(entry_id, entry_id)
             status = _map_state(entry.get("State", ""))
-            raw_wait = entry.get("WaitingTime")
+
             wait_time: Optional[int] = None
-            if status == AttractionStatus.open and raw_wait is not None:
+            if status == AttractionStatus.open:
                 try:
-                    wait_time = int(raw_wait)
+                    wait_time = int(entry.get("WaitingTime") or 0)
                 except (ValueError, TypeError):
                     wait_time = None
 
             # ── Single Rider ──
             single_rider: Optional[SingleRiderInfo] = None
-            sr_entry_id = next((k for k, v in single_rider_map.items() if v == entry_id), None)
-            if sr_entry_id and sr_entry_id in all_entries:
-                sr_entry = all_entries[sr_entry_id]
-                sr_status = _map_state(sr_entry.get("State", ""))
-                sr_wait_raw = sr_entry.get("WaitingTime")
+            sr_id = next((k for k, v in single_rider_map.items() if v == entry_id), None)
+            if sr_id and sr_id in all_entries:
+                sr = all_entries[sr_id]
+                sr_status = _map_state(sr.get("State", ""))
                 sr_wait: Optional[int] = None
-                if sr_status == AttractionStatus.open and sr_wait_raw is not None:
+                if sr_status == AttractionStatus.open:
                     try:
-                        sr_wait = int(sr_wait_raw)
+                        sr_wait = int(sr.get("WaitingTime") or 0)
                     except (ValueError, TypeError):
                         sr_wait = None
                 single_rider = SingleRiderInfo(
@@ -231,27 +207,23 @@ class EftelingConnector(BaseParkConnector):
             vq_raw = entry.get("VirtualQueue")
             if vq_raw:
                 vq_state_raw = (vq_raw.get("State") or "").lower()
-                vq_waiting = vq_raw.get("WaitingTime")  # minutes until return window opens
+                vq_wait = vq_raw.get("WaitingTime")
 
                 if vq_state_raw == "walkin":
-                    # No VQ needed right now — walk in directly
+                    # No VQ needed right now — walk straight in
                     virtual_queue = VirtualQueueInfo(
                         available=True,
                         state=VirtualQueueState.temporarily_full,
-                        return_start=None,
-                        return_end=None,
                     )
                 elif vq_state_raw == "enabled":
-                    # VQ active — calculate return window
-                    now_park = datetime.now(PARK_TIMEZONE)
-                    # blank seconds/microseconds for clean times
-                    now_park = now_park.replace(second=0, microsecond=0)
+                    # Calculate return window: now + WaitingTime, window = +15 min
+                    now_park = datetime.now(PARK_TIMEZONE).replace(second=0, microsecond=0)
                     try:
-                        wait_min = int(vq_waiting) if vq_waiting is not None else 0
+                        wait_min = int(vq_wait or 0)
                     except (ValueError, TypeError):
                         wait_min = 0
                     return_start = now_park + timedelta(minutes=wait_min)
-                    return_end = return_start + timedelta(minutes=VIRTUAL_QUEUE_WINDOW_MINUTES)
+                    return_end   = return_start + timedelta(minutes=VQ_WINDOW_MINUTES)
                     virtual_queue = VirtualQueueInfo(
                         available=True,
                         state=VirtualQueueState.available,
@@ -259,15 +231,12 @@ class EftelingConnector(BaseParkConnector):
                         return_end=return_end,
                     )
                 elif vq_state_raw == "full":
-                    # VQ full for the rest of the day
                     virtual_queue = VirtualQueueInfo(
                         available=True,
                         state=VirtualQueueState.full,
-                        return_start=None,
-                        return_end=None,
                     )
                 else:
-                    logger.warning(f"[Efteling] Unknown VirtualQueue state: '{vq_state_raw}' for {entry_id}")
+                    logger.warning(f"[Efteling] Unknown VQ state '{vq_state_raw}' for {entry_id}")
                     virtual_queue = VirtualQueueInfo(
                         available=True,
                         state=VirtualQueueState.closed,
@@ -282,7 +251,7 @@ class EftelingConnector(BaseParkConnector):
                 virtual_queue=virtual_queue,
             ))
 
-        logger.info(f"[Efteling] Fetched {len(attractions)} attractions.")
+        logger.info(f"[Efteling] {len(attractions)} attractions fetched.")
         return attractions
 
     # ──────────────────────────────────────────
@@ -290,12 +259,6 @@ class EftelingConnector(BaseParkConnector):
     # ──────────────────────────────────────────
 
     async def fetch_shows(self) -> List[Show]:
-        """
-        Parse shows from the WIS response.
-        Type: "Shows en Entertainment"
-        Each entry has ShowTimes (upcoming) and PastShowTimes (past) arrays.
-        Each showtime has StartDateTime, EndDateTime, Edition.
-        """
         try:
             data = await self._fetch_wis()
         except Exception as e:
@@ -303,16 +266,17 @@ class EftelingConnector(BaseParkConnector):
             return []
 
         shows: List[Show] = []
+        now_park = datetime.now(PARK_TIMEZONE)
+
         for entry in data.get("AttractionInfo", []):
             if entry.get("Type") != "Shows en Entertainment":
                 continue
 
-            # Combine upcoming + past show times
             raw_times = (entry.get("ShowTimes") or []) + (entry.get("PastShowTimes") or [])
             show_times: List[ShowTime] = []
             for t in raw_times:
-                start = _parse_efteling_dt(t.get("StartDateTime"))
-                end = _parse_efteling_dt(t.get("EndDateTime"))
+                start = _parse_dt(t.get("StartDateTime"))
+                end   = _parse_dt(t.get("EndDateTime"))
                 if start and end:
                     show_times.append(ShowTime(
                         start_date_time=start,
@@ -320,21 +284,17 @@ class EftelingConnector(BaseParkConnector):
                         edition=t.get("Edition") or "Showtime",
                     ))
 
-            # Sort by start time
             show_times.sort(key=lambda x: x.start_date_time)
-
-            # Status: closed if no upcoming show times
-            upcoming = [st for st in show_times if st.start_date_time >= datetime.now(PARK_TIMEZONE)]
-            status = "open" if upcoming else "closed"
+            has_upcoming = any(st.start_date_time >= now_park for st in show_times)
 
             shows.append(Show(
                 id=entry.get("Id", "").lower(),
                 name=entry.get("Name", "Unknown"),
-                status=status,
+                status="open" if has_upcoming else "closed",
                 show_times=show_times,
             ))
 
-        logger.info(f"[Efteling] Fetched {len(shows)} shows.")
+        logger.info(f"[Efteling] {len(shows)} shows fetched.")
         return shows
 
     # ──────────────────────────────────────────
@@ -342,11 +302,6 @@ class EftelingConnector(BaseParkConnector):
     # ──────────────────────────────────────────
 
     async def fetch_restaurants(self) -> List[Restaurant]:
-        """
-        Parse restaurants from the WIS response.
-        Type: "Horeca"
-        Opening times are in entry.OpeningTimes as [{HourFrom, HourTo}].
-        """
         try:
             data = await self._fetch_wis()
         except Exception as e:
@@ -358,10 +313,10 @@ class EftelingConnector(BaseParkConnector):
             if entry.get("Type") != "Horeca":
                 continue
 
-            opening_times = entry.get("OpeningTimes") or []
-            if opening_times:
-                opening_time = _parse_efteling_dt(opening_times[0].get("HourFrom"))
-                closing_time = _parse_efteling_dt(opening_times[0].get("HourTo"))
+            times = entry.get("OpeningTimes") or []
+            if times:
+                opening_time = _parse_dt(times[0].get("HourFrom"))
+                closing_time = _parse_dt(times[0].get("HourTo"))
                 status = VenueStatus.open
             else:
                 opening_time = None
@@ -376,7 +331,7 @@ class EftelingConnector(BaseParkConnector):
                 closing_time=closing_time,
             ))
 
-        logger.info(f"[Efteling] Fetched {len(restaurants)} restaurants.")
+        logger.info(f"[Efteling] {len(restaurants)} restaurants fetched.")
         return restaurants
 
     # ──────────────────────────────────────────
@@ -384,10 +339,6 @@ class EftelingConnector(BaseParkConnector):
     # ──────────────────────────────────────────
 
     async def fetch_shops(self) -> List[Shop]:
-        """
-        Parse souvenir shops from the WIS response.
-        Type: "Souvenirwinkel"
-        """
         try:
             data = await self._fetch_wis()
         except Exception as e:
@@ -399,10 +350,10 @@ class EftelingConnector(BaseParkConnector):
             if entry.get("Type") != "Souvenirwinkel":
                 continue
 
-            opening_times = entry.get("OpeningTimes") or []
-            if opening_times:
-                opening_time = _parse_efteling_dt(opening_times[0].get("HourFrom"))
-                closing_time = _parse_efteling_dt(opening_times[0].get("HourTo"))
+            times = entry.get("OpeningTimes") or []
+            if times:
+                opening_time = _parse_dt(times[0].get("HourFrom"))
+                closing_time = _parse_dt(times[0].get("HourTo"))
                 status = VenueStatus.open
             else:
                 opening_time = None
@@ -417,7 +368,7 @@ class EftelingConnector(BaseParkConnector):
                 closing_time=closing_time,
             ))
 
-        logger.info(f"[Efteling] Fetched {len(shops)} shops.")
+        logger.info(f"[Efteling] {len(shops)} shops fetched.")
         return shops
 
     # ──────────────────────────────────────────
@@ -426,61 +377,49 @@ class EftelingConnector(BaseParkConnector):
 
     async def fetch_calendar(self) -> ParkCalendar:
         """
-        Fetch Efteling opening calendar for the next 3 months.
-        Endpoint: https://www.efteling.com/service/cached/getpoiinfo/en/{year}/{month}
-        Response: { OpeningHours: [{ Date, OpeningHours: [{Open, Close}] }] }
-
-        Multiple OpeningHours entries per day = regular hours + evening hours.
+        Fetch opening calendar for the next 3 months.
+        Endpoint returns: { OpeningHours: [{ Date, OpeningHours: [{Open, Close}] }] }
+        Multiple OpeningHours entries per day = regular + evening hours.
         """
-        from datetime import date
-
         days: List[ParkDay] = []
         now = datetime.now(PARK_TIMEZONE)
 
-        for month_offset in range(3):
-            # calculate target month
-            target = (now.replace(day=1) + timedelta(days=32 * month_offset)).replace(day=1)
-            month_str = str(target.month)
-            year_str = str(target.year)
-
-            url = CALENDAR_URL.format(year=year_str, month=month_str)
+        for offset in range(3):
+            target = (now.replace(day=1) + timedelta(days=32 * offset)).replace(day=1)
+            url = CALENDAR_URL.format(year=target.year, month=target.month)
             try:
                 async with httpx.AsyncClient(timeout=20) as client:
                     resp = await client.get(url, headers=CALENDAR_HEADERS)
                     if resp.status_code == 400:
                         # Efteling returns 400 for past months
-                        logger.info(f"[Efteling] Calendar 400 for {year_str}/{month_str} (past month), skipping.")
                         continue
                     resp.raise_for_status()
-                    cal_data = resp.json()
+                    cal = resp.json()
             except Exception as e:
-                logger.error(f"[Efteling] Calendar fetch failed for {year_str}/{month_str}: {e}")
+                logger.error(f"[Efteling] Calendar fetch failed ({target.year}/{target.month}): {e}")
                 continue
 
-            opening_hours = cal_data.get("OpeningHours", [])
-            for day_entry in opening_hours:
-                date_str = day_entry.get("Date", "")
+            for day_entry in cal.get("OpeningHours", []):
                 raw_hours = sorted(
                     day_entry.get("OpeningHours", []),
-                    key=lambda h: h.get("Open", "00:00")
+                    key=lambda h: h.get("Open", "00:00"),
                 )
-
-                park_hours: List[ParkHours] = []
-                for idx, h in enumerate(raw_hours):
-                    park_hours.append(ParkHours(
+                park_hours = [
+                    ParkHours(
                         opening_time=h.get("Open", ""),
                         closing_time=h.get("Close", ""),
                         type="operating" if idx == 0 else "informational",
                         description=None if idx == 0 else "Evening Hours",
-                    ))
-
+                    )
+                    for idx, h in enumerate(raw_hours)
+                ]
                 days.append(ParkDay(
-                    date=date_str,
+                    date=day_entry.get("Date", ""),
                     is_open=len(park_hours) > 0,
                     hours=park_hours,
                 ))
 
-        logger.info(f"[Efteling] Fetched calendar with {len(days)} days.")
+        logger.info(f"[Efteling] Calendar fetched: {len(days)} days.")
         return ParkCalendar(
             park_id=self.park_id,
             park_name=self.park_name,
@@ -493,16 +432,12 @@ class EftelingConnector(BaseParkConnector):
 # Helpers
 # ──────────────────────────────────────────────
 
-def _parse_efteling_dt(value) -> Optional[datetime]:
-    """
-    Parse Efteling datetime strings.
-    Efteling uses ISO 8601 with timezone offset: "2026-02-20T14:30:00+01:00"
-    """
+def _parse_dt(value) -> Optional[datetime]:
+    """Parse Efteling ISO 8601 datetime strings with timezone offset."""
     if not value:
         return None
     try:
         dt = datetime.fromisoformat(str(value))
-        # ensure timezone-aware
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=PARK_TIMEZONE)
         return dt
