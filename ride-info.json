@@ -1,0 +1,111 @@
+{
+  "park_id": "efteling",
+  "park_name": "Efteling",
+  "attractions": [
+    {
+      "id": "baron1898",
+      "name": "Baron 1898",
+      "land": "Marerijk",
+      "type": "rollercoaster",
+      "location": { "lat": 51.6494, "lng": 5.0464 },
+      "photos": [
+        {
+          "url": "https://cdn.degusseme.com/efteling/baron1898/01.jpg",
+          "alt": "Baron 1898 lift hill",
+          "is_primary": true
+        },
+        {
+          "url": "https://cdn.degusseme.com/efteling/baron1898/02.jpg",
+          "alt": "Baron 1898 drop",
+          "is_primary": false
+        }
+      ],
+      "details": {
+        "height_requirement_cm": 130,
+        "capacity_per_hour": 1200,
+        "duration_seconds": 90,
+        "thrill_level": "extreme"
+      }
+    },
+    {
+      "id": "joris-en-de-draak",
+      "name": "Joris en de Draak",
+      "land": "Ruigrijk",
+      "type": "rollercoaster",
+      "location": { "lat": 51.6488, "lng": 5.0477 },
+      "photos": [
+        {
+          "url": "https://cdn.degusseme.com/efteling/joris/01.jpg",
+          "alt": "Joris en de Draak dueling coasters",
+          "is_primary": true
+        }
+      ],
+      "details": {
+        "height_requirement_cm": 120,
+        "capacity_per_hour": 1800,
+        "duration_seconds": 105,
+        "thrill_level": "thrilling"
+      }
+    },
+    {
+      "id": "vliegende-hollander",
+      "name": "De Vliegende Hollander",
+      "land": "Ruigrijk",
+      "type": "water_ride",
+      "location": { "lat": 51.6491, "lng": 5.0481 },
+      "photos": [
+        {
+          "url": "https://cdn.degusseme.com/efteling/vliegende-hollander/01.jpg",
+          "alt": "De Vliegende Hollander exterior",
+          "is_primary": true
+        }
+      ],
+      "details": {
+        "height_requirement_cm": 100,
+        "capacity_per_hour": 900,
+        "duration_seconds": 420,
+        "thrill_level": "moderate"
+      }
+    },
+    {
+      "id": "fata-morgana",
+      "name": "Fata Morgana",
+      "land": "Anderrijk",
+      "type": "dark_ride",
+      "location": { "lat": 51.6502, "lng": 5.0459 },
+      "photos": [
+        {
+          "url": "https://cdn.degusseme.com/efteling/fata-morgana/01.jpg",
+          "alt": "Fata Morgana Arabian nights atmosphere",
+          "is_primary": true
+        }
+      ],
+      "details": {
+        "height_requirement_cm": null,
+        "capacity_per_hour": 1600,
+        "duration_seconds": 600,
+        "thrill_level": "family"
+      }
+    },
+    {
+      "id": "symbolica",
+      "name": "Symbolica",
+      "land": "Fantasierijk",
+      "type": "dark_ride",
+      "location": { "lat": 51.6507, "lng": 5.0462 },
+      "photos": [
+        {
+          "url": "https://cdn.degusseme.com/efteling/symbolica/01.jpg",
+          "alt": "Symbolica palace entrance",
+          "is_primary": true
+        }
+      ],
+      "details": {
+        "height_requirement_cm": null,
+        "capacity_per_hour": 2400,
+        "duration_seconds": 540,
+        "thrill_level": "family"
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+services:
+  api:
+    build: .
+    container_name: themepark-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB=themepark
+      - DATA_DIR=/data
+    volumes:
+      - ./data:/data          # static & cached JSON files
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - themepark-net
+
+  mongo:
+    image: mongo:7
+    container_name: themepark-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - themepark-net
+
+volumes:
+  mongo-data:
+
+networks:
+  themepark-net:
+    driver: bridge
