@@ -1,13 +1,15 @@
+version: "1.1"
+
 services:
   api:
     build: .
-    container_name: ridepulse-api
+    container_name: api
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       - MONGO_URI=mongodb://mongo:27017
-      - MONGO_DB=themepark
+      - MONGO_DB=themepark_api
       - DATA_DIR=/data
       - RIDE_INFO_DIR=/ride-info
     volumes:
@@ -17,21 +19,31 @@ services:
       mongo:
         condition: service_healthy
     networks:
-      - ridepulse-net
+      - ridepulse-network
 
   mongo:
     image: mongo:7
-    container_name: ridepulse-mongo
+    container_name: mongodb
     restart: unless-stopped
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - ridepulse-net
+      - ridepulse-network
+
+socket-proxy: #service voor Uptime Kuma
+    image: tecnativa/docker-socket-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Alleen-lezen toegang
+    environment:
+      - CONTAINERS=1
+    ports:
+      - 2375:2375
+
 
 volumes:
   mongo-data:
