@@ -47,5 +47,5 @@ volumes:
   mongo-data:
 
 networks:
-  ridepulse-net:
+  ridepulse-network:
     driver: bridge
