@@ -33,7 +33,7 @@ services:
     networks:
       - ridepulse-network
 
-socket-proxy: #service voor Uptime Kuma
+  socket-proxy: #service voor Uptime Kuma
     image: tecnativa/docker-socket-proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro # Alleen-lezen toegang
